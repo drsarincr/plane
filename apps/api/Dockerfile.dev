@@ -37,8 +37,10 @@ WORKDIR /code
 COPY --from=uv /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 
-# Install the default groups (dev + test). --inexact keeps the base image's pip.
-RUN uv sync --locked --inexact
+# zxcvbn's legacy setup.py build requires setuptools. Install its build
+# dependency with pip, then let uv build zxcvbn without creating an isolated env.
+RUN python -m pip install --no-cache-dir "setuptools>=40.8.0" \
+    && uv sync --locked --inexact --no-build-isolation-package zxcvbn
 
 
 COPY . .

@@ -10,6 +10,16 @@ from .common import *  # noqa
 
 DEBUG = os.environ.get("DEBUG", "1") == "1"
 
+# This bypass is only available in local settings and is disabled by default.
+LOCAL_DEV_AUTH_BYPASS = os.environ.get("LOCAL_DEV_AUTH_BYPASS", "0") == "1"
+if LOCAL_DEV_AUTH_BYPASS:
+    auth_middleware = "django.contrib.auth.middleware.AuthenticationMiddleware"
+    middleware_index = MIDDLEWARE.index(auth_middleware) + 1  # noqa: F405
+    MIDDLEWARE.insert(  # noqa: F405
+        middleware_index,
+        "plane.authentication.middleware.dev_bypass.LocalDevelopmentAuthMiddleware",
+    )
+
 # Debug Toolbar settings (set DEBUG=0 to skip its per-request SQL/panel instrumentation)
 if DEBUG:
     INSTALLED_APPS += ("debug_toolbar",)  # noqa
