@@ -33,6 +33,8 @@ class S3Storage(S3Boto3Storage):
         # Let django-storages set up its own state (location, bucket_name, ...) so
         # this class also works as the default FileField storage.
         super().__init__()
+        self.request = request
+        self.presigned_client = None
         # Get the AWS credentials and bucket name from the environment
         self.aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
         # Use the AWS_SECRET_ACCESS_KEY environment variable for the secret key
@@ -46,7 +48,7 @@ class S3Storage(S3Boto3Storage):
         # Use the SIGNED_URL_EXPIRATION environment variable for the expiration time (default: 3600 seconds)
         self.signed_url_expiration = int(os.environ.get("SIGNED_URL_EXPIRATION", "3600"))
 
-        if os.environ.get("USE_MINIO") == "1":
+        if os.environ.get("USE_MINIO") == "1" and not (request and getattr(settings, "LOCAL_DEV_AUTH_BYPASS", False)):
             # Determine protocol based on environment variable
             if os.environ.get("MINIO_ENDPOINT_SSL") == "1":
                 endpoint_protocol = "https"
@@ -72,6 +74,21 @@ class S3Storage(S3Boto3Storage):
                 config=boto3.session.Config(signature_version="s3v4"),
             )
 
+    def _get_presigned_client(self):
+        if not self.request or not getattr(settings, "LOCAL_DEV_AUTH_BYPASS", False):
+            return self.s3_client
+
+        if self.presigned_client is None:
+            self.presigned_client = boto3.client(
+                "s3",
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                region_name=self.aws_region,
+                endpoint_url=f"{self.request.scheme}://{self.request.get_host()}",
+                config=boto3.session.Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            )
+        return self.presigned_client
+
     def generate_presigned_post(self, object_name, file_type, file_size, expiration=None):
         """Generate a presigned URL to upload an S3 object"""
         if expiration is None:
@@ -94,7 +111,7 @@ class S3Storage(S3Boto3Storage):
         # Generate the presigned POST URL
         try:
             # Generate a presigned URL for the S3 object
-            response = self.s3_client.generate_presigned_post(
+            response = self._get_presigned_client().generate_presigned_post(
                 Bucket=self.aws_storage_bucket_name,
                 Key=object_name,
                 Fields=fields,
@@ -144,7 +161,7 @@ class S3Storage(S3Boto3Storage):
             disposition = "attachment"
         params["ResponseContentDisposition"] = self._get_content_disposition(disposition, filename)
         try:
-            response = self.s3_client.generate_presigned_url(
+            response = self._get_presigned_client().generate_presigned_url(
                 "get_object",
                 Params=params,
                 ExpiresIn=expiration,

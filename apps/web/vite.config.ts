@@ -6,6 +6,12 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 dotenv.config({ path: path.resolve(__dirname, ".env") });
 
+const webBaseUrl = new URL(process.env.VITE_WEB_BASE_URL ?? "http://localhost:3000");
+const forwardedHeaders = {
+  "X-Forwarded-Host": webBaseUrl.host,
+  "X-Forwarded-Proto": webBaseUrl.protocol.slice(0, -1),
+};
+
 // Expose only vars starting with VITE_
 const viteEnv = Object.keys(process.env)
   .filter((k) => k.startsWith("VITE_"))
@@ -33,14 +39,21 @@ export default defineConfig(() => ({
   },
   server: {
     host: "127.0.0.1",
+    allowedHosts: [webBaseUrl.hostname],
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
+        headers: forwardedHeaders,
       },
       "/auth": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
+        headers: forwardedHeaders,
+      },
+      "/uploads": {
+        target: "http://127.0.0.1:9000",
+        changeOrigin: false,
       },
     },
   },

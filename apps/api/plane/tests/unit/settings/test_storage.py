@@ -6,6 +6,7 @@ import os
 from unittest.mock import Mock, patch
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import RequestFactory
 from plane.settings.storage import S3Storage
 
 
@@ -205,6 +206,44 @@ class TestS3StorageSignedURLExpiration:
         mock_s3_client.generate_presigned_url.assert_called_once()
         call_kwargs = mock_s3_client.generate_presigned_url.call_args[1]
         assert call_kwargs["ExpiresIn"] == 120
+
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test-key",
+            "AWS_SECRET_ACCESS_KEY": "test-secret",
+            "AWS_S3_BUCKET_NAME": "uploads",
+            "AWS_S3_ENDPOINT_URL": "http://plane-minio:9000",
+            "AWS_REGION": "us-east-1",
+            "USE_MINIO": "0",
+        },
+        clear=True,
+    )
+    @patch("plane.settings.storage.boto3.client")
+    def test_local_dev_presigned_upload_uses_forwarded_web_origin(self, mock_client, settings):
+        s3_client = Mock()
+        presigned_client = Mock()
+        presigned_client.generate_presigned_post.return_value = {"url": "https://plane-web.test/uploads"}
+        mock_client.side_effect = [s3_client, presigned_client]
+        settings.LOCAL_DEV_AUTH_BYPASS = True
+        settings.USE_X_FORWARDED_HOST = True
+        settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+        request = RequestFactory().post(
+            "/api/assets/v2/user-assets/",
+            secure=True,
+            HTTP_HOST="127.0.0.1:8000",
+            HTTP_X_FORWARDED_HOST="plane-web.test",
+            HTTP_X_FORWARDED_PROTO="https",
+        )
+
+        storage = S3Storage(request=request)
+        storage.generate_presigned_post("avatar.png", "image/png", 1024)
+
+        assert mock_client.call_args_list[0].kwargs["endpoint_url"] == "http://plane-minio:9000"
+        presigned_config = mock_client.call_args_list[1].kwargs["config"]
+        assert mock_client.call_args_list[1].kwargs["endpoint_url"] == "https://plane-web.test"
+        assert presigned_config.s3 == {"addressing_style": "path"}
+        presigned_client.generate_presigned_post.assert_called_once()
 
 
 @pytest.mark.unit

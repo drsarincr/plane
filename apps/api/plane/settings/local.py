@@ -13,6 +13,8 @@ DEBUG = os.environ.get("DEBUG", "1") == "1"
 # This bypass is only available in local settings and is disabled by default.
 LOCAL_DEV_AUTH_BYPASS = os.environ.get("LOCAL_DEV_AUTH_BYPASS", "0") == "1"
 if LOCAL_DEV_AUTH_BYPASS:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    USE_X_FORWARDED_HOST = True
     auth_middleware = "django.contrib.auth.middleware.AuthenticationMiddleware"
     middleware_index = MIDDLEWARE.index(auth_middleware) + 1  # noqa: F405
     MIDDLEWARE.insert(  # noqa: F405
